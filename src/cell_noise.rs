@@ -466,6 +466,36 @@ impl WorleyMode for WorleyDifference {
     }
 }
 
+/// A [`WorleyMode`] that returns the unorm sum of the first and second nearest [`CellPoint`](crate::cells::CellPoint).
+/// This will have artifacts when using `HALF_SCALE` on [`Voronoi`](crate::cells::Voronoi).
+///
+/// ```
+/// # use noiz::prelude::*;
+/// use noiz::cell_noise::WorleySum;
+/// let noise = Noise::<PerCellPointDistances<Voronoi, EuclideanLength, WorleySum>>::default();
+/// # let val = noise.sample_for::<f32>(bevy_math::Vec2::ZERO);
+/// ```
+#[derive(Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize))]
+#[cfg_attr(feature = "debug", derive(Debug))]
+pub struct WorleyAdd;
+
+impl WorleyMode for WorleyAdd {
+    #[inline]
+    fn evaluate_worley<I: VectorSpace<Scalar = f32>>(
+        &self,
+        points: impl Iterator<Item = I>,
+        lengths: &impl LengthFunction<I>,
+        _max_least_length: f32,
+        max_next_least_length: f32,
+    ) -> f32 {
+        let (least, next_least) = two_least(points.map(|p| lengths.length_ordering(p)));
+        (lengths.length_from_ordering(next_least) + lengths.length_from_ordering(least))
+            / max_next_least_length
+    }
+}
+
 /// A [`WorleyMode`] that returns the unorm average of the first and second nearest [`CellPoint`](crate::cells::CellPoint).
 /// This will have artifacts when using `HALF_SCALE` on [`Voronoi`](crate::cells::Voronoi).
 ///
