@@ -9,6 +9,73 @@ use bevy_math::{Curve, Vec2, Vec3, Vec3A, Vec4};
 
 use crate::{NoiseFunction, cells::WithGradient, lengths::LengthFunction};
 
+/// A [`NoiseFunction`] that clamps its input to `[min, max]`.
+/// Chain with [`Remap`] after if preserving SNorm or UNorm is desired
+#[derive(Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize))]
+#[cfg_attr(feature = "debug", derive(Debug))]
+pub struct Clamp {
+    /// The minimum value of the clamp range. Inputs below this map to this value.
+    pub min: f32,
+    /// The maximum value of the clamp range. Inputs above this map to this value.
+    pub max: f32,
+}
+
+impl Default for Clamp {
+    fn default() -> Self {
+        Self { min: 0.0, max: 1.0 }
+    }
+}
+
+impl NoiseFunction<f32> for Clamp {
+    type Output = f32;
+
+    #[inline]
+    fn evaluate(&self, input: f32, _seeds: &mut crate::rng::NoiseRng) -> Self::Output {
+        input.clamp(self.min, self.max)
+    }
+}
+
+/// A [`NoiseFunction`] that linearly remaps its input from `[from_min, from_max]` to `[to_min, to_max]`.
+/// Does not clamp — values outside the input range will extrapolate beyond `[to_min, to_max]`.
+/// Chain with [`Clamp`] beforehand if clamping is desired.
+#[derive(Clone, Copy, PartialEq)]
+#[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
+#[cfg_attr(feature = "serialize", derive(serde::Serialize))]
+#[cfg_attr(feature = "debug", derive(Debug))]
+pub struct Remap {
+    /// The minimum of the input range to remap from.
+    pub from_min: f32,
+    /// The maximum of the input range to remap from.
+    pub from_max: f32,
+    /// The maximum of the input range to remap from.
+    pub to_min: f32,
+    /// The maximum of the input range to remap from.
+    pub to_max: f32,
+}
+
+impl Default for Remap {
+    fn default() -> Self {
+        Self {
+            from_min: 0.0,
+            from_max: 1.0,
+            to_min: 0.0,
+            to_max: 1.0,
+        }
+    }
+}
+
+impl NoiseFunction<f32> for Remap {
+    type Output = f32;
+
+    #[inline]
+    fn evaluate(&self, input: f32, _seeds: &mut crate::rng::NoiseRng) -> Self::Output {
+        let t = (input - self.from_min) / (self.from_max - self.from_min);
+        self.to_min + t * (self.to_max - self.to_min)
+    }
+}
+
 /// A [`NoiseFunction`] that maps vectors from (-1,1) to (0, 1).
 #[derive(Default, PartialEq, Clone, Copy)]
 #[cfg_attr(feature = "bevy_reflect", derive(bevy_reflect::Reflect))]
@@ -194,6 +261,24 @@ macro_rules! impl_vector_spaces {
             #[inline]
             fn evaluate(&self, input: $n, _seeds: &mut crate::rng::NoiseRng) -> Self::Output {
                 input.map(|v| v.powi(self.0))
+            }
+        }
+
+        impl NoiseFunction<$n> for Clamp {
+            type Output = $n;
+
+            #[inline]
+            fn evaluate(&self, input: $n, _seeds: &mut crate::rng::NoiseRng) -> Self::Output {
+                input.map(|v| self.evaluate(v, &mut crate::rng::NoiseRng(0)))
+            }
+        }
+
+        impl NoiseFunction<$n> for Remap {
+            type Output = $n;
+
+            #[inline]
+            fn evaluate(&self, input: $n, _seeds: &mut crate::rng::NoiseRng) -> Self::Output {
+                input.map(|v| self.evaluate(v, &mut crate::rng::NoiseRng(0)))
             }
         }
     };
@@ -414,6 +499,41 @@ impl<L: LengthFunction<Vec2>> NoiseFunction<Vec2> for Spiral<L> {
         let len = self.0.length_of(input);
         let theta = input.to_angle() * core::f32::consts::FRAC_1_PI * self.1;
         Vec2::new(theta * len.floor(), len)
+    }
+}
+
+impl<G: Mul<f32, Output = G>> NoiseFunction<WithGradient<f32, G>> for Clamp {
+    type Output = WithGradient<f32, G>;
+
+    #[inline]
+    fn evaluate(
+        &self,
+        input: WithGradient<f32, G>,
+        _seeds: &mut crate::rng::NoiseRng,
+    ) -> Self::Output {
+        let in_range = input.value >= self.min && input.value <= self.max;
+        WithGradient {
+            value: input.value.clamp(self.min, self.max),
+            gradient: input.gradient * if in_range { 1.0 } else { 0.0 },
+        }
+    }
+}
+
+impl<G: Mul<f32, Output = G>> NoiseFunction<WithGradient<f32, G>> for Remap {
+    type Output = WithGradient<f32, G>;
+
+    #[inline]
+    fn evaluate(
+        &self,
+        input: WithGradient<f32, G>,
+        _seeds: &mut crate::rng::NoiseRng,
+    ) -> Self::Output {
+        let scale = (self.to_max - self.to_min) / (self.from_max - self.from_min);
+        let t = (input.value - self.from_min) / (self.from_max - self.from_min);
+        WithGradient {
+            value: self.to_min + t * (self.to_max - self.to_min),
+            gradient: input.gradient * scale,
+        }
     }
 }
 
