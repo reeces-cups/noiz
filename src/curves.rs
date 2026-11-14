@@ -1,9 +1,8 @@
 //! Contains a variety of curves built to work well with noise.
 
-use bevy_math::{
-    Curve, VectorSpace, WithDerivative,
-    curve::{Interval, derivatives::SampleDerivative},
-};
+use bevy_curve::{Curve, Interval, derivatives::SampleDerivative};
+
+use bevy_math::{VectorSpace, WithDerivative};
 
 /// Linear interpolation.
 #[derive(Default, Clone, Copy, PartialEq, Eq)]
